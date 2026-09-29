@@ -1,0 +1,878 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>玉皇山公园 · 亲子路线图</title>
+<link rel="stylesheet" href="maplibre-gl.css">
+<style>
+:root{
+  --bg:#FBFAF6; --card:#FFFFFF; --ink:#1F2D26; --muted:#7A8B83;
+  --accent:#FF7A45; --accent-deep:#F4511E; --green:#25B37E;
+  --line:#E9ECE6; --sky:#EDF6FF; --shadow:0 10px 30px rgba(31,45,38,.14);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"PingFang SC","Microsoft YaHei","Noto Sans SC",sans-serif;
+  color:var(--ink); background:var(--bg); overflow:hidden;
+  -webkit-font-smoothing:antialiased;
+}
+#map{position:absolute;inset:0}
+body>*:not(#map){opacity:0;transition:opacity .45s ease}
+body.ready>*:not(#map){opacity:1}
+
+/* ---------- header card ---------- */
+#hd{
+  position:absolute; top:18px; left:18px; z-index:5;
+  background:rgba(255,255,255,.94); backdrop-filter:blur(8px);
+  border:1px solid var(--line); border-radius:18px;
+  padding:16px 18px 14px; width:330px; box-shadow:var(--shadow);
+}
+#hd .kicker{font-size:12px; color:var(--green); font-weight:600; letter-spacing:.06em}
+#hd h1{font-size:23px; font-weight:700; margin:4px 0 2px; letter-spacing:.01em}
+#hd .sub{font-size:13px; color:var(--muted); margin-bottom:11px}
+.chips{display:flex; flex-wrap:wrap; gap:7px}
+.chip{
+  font-size:12.5px; font-weight:600; padding:5px 10px; border-radius:999px;
+  background:var(--sky); color:#3E6C9C;
+}
+.chip.hot{background:#FFF0E9; color:var(--accent-deep)}
+.chip.leaf{background:#E7F7F0; color:#1B8F63}
+#hd .note{
+  margin-top:10px; font-size:11.5px; color:var(--muted); line-height:1.5;
+  border-top:1px dashed var(--line); padding-top:9px;
+}
+
+/* ---------- right timeline panel ---------- */
+#panel{
+  position:absolute; top:18px; right:18px; bottom:64px; width:298px; z-index:5;
+  background:rgba(255,255,255,.96); backdrop-filter:blur(8px);
+  border:1px solid var(--line); border-radius:18px; box-shadow:var(--shadow);
+  display:flex; flex-direction:column; overflow:hidden;
+}
+#panel .phd{
+  padding:14px 16px 10px; border-bottom:1px solid var(--line);
+  display:flex; align-items:baseline; justify-content:space-between;
+}
+#panel .phd b{font-size:15px}
+#panel .phd span{font-size:12px; color:var(--muted)}
+#timeline{overflow-y:auto; padding:10px 10px 14px; flex:1}
+#timeline::-webkit-scrollbar{width:8px}
+#timeline::-webkit-scrollbar-thumb{background:#DFE4DC; border-radius:8px}
+.card{
+  display:flex; gap:10px; padding:9px; border-radius:14px; cursor:pointer;
+  border:1.5px solid transparent; transition:all .18s ease; position:relative;
+}
+.card+.card{margin-top:4px}
+.card:hover{background:#F7F9F5}
+.card.on{background:#FFF4EF; border-color:#FFD2BC}
+.card .num{
+  width:26px; height:26px; border-radius:50%; flex:none;
+  background:var(--accent); color:#fff; font-size:13px; font-weight:700;
+  display:flex; align-items:center; justify-content:center;
+  box-shadow:0 3px 8px rgba(255,122,69,.4); margin-top:2px;
+}
+.card.s1 .num{background:var(--green); box-shadow:0 3px 8px rgba(37,179,126,.4)}
+.card.sN .num{background:#2B3A34; box-shadow:0 3px 8px rgba(43,58,52,.35)}
+.card .thumb{
+  width:72px; height:56px; border-radius:10px; object-fit:cover; flex:none;
+  background:#EEE; border:1px solid var(--line);
+}
+.card .meta{min-width:0; flex:1}
+.card .t{font-size:13.5px; font-weight:700; display:flex; align-items:center; flex-wrap:wrap; gap:5px}
+.card .t>span.tm{white-space:nowrap}
+.card .t em{font-style:normal; font-size:11px; color:var(--accent-deep); background:#FFF0E9;
+  padding:1px 6px; border-radius:999px; font-weight:600; white-space:nowrap}
+.card .cap{font-size:12px; color:var(--muted); margin-top:3px; line-height:1.45;
+  overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical}
+
+/* ---------- markers ---------- */
+.pin{
+  position:absolute; /* maplibre positions markers via absolute+transform — never override */
+  width:26px;height:26px;border-radius:50%;
+  background:var(--accent); color:#fff; font-weight:700; font-size:12px;
+  display:flex;align-items:center;justify-content:center;
+  border:2.5px solid #fff; box-shadow:0 3px 10px rgba(31,45,38,.32);
+  cursor:pointer; transition:box-shadow .18s ease;
+  font-family:inherit;
+}
+.pin:hover{box-shadow:0 0 0 6px rgba(255,122,69,.32), 0 3px 10px rgba(31,45,38,.32)}
+.pin.s1{background:var(--green); box-shadow:0 4px 14px rgba(37,179,126,.45)}
+.pin.sN{background:#2B3A34}
+.pin.on{box-shadow:0 0 0 7px rgba(255,122,69,.42), 0 3px 10px rgba(31,45,38,.32)}
+.pin.s1.on{box-shadow:0 0 0 6px rgba(37,179,126,.25), 0 4px 14px rgba(31,45,38,.3)}
+.ptag{
+  position:absolute; top:-26px; left:50%; transform:translateX(-50%);
+  background:#fff; border:1px solid var(--line); border-radius:999px;
+  font-size:11px; font-weight:700; padding:2px 9px; white-space:nowrap;
+  color:var(--ink); box-shadow:0 3px 8px rgba(31,45,38,.16);
+}
+.ptag.g{color:#1B8F63; border-color:#BFE9D8}
+
+/* ---------- misc ---------- */
+#scale-wrap{position:absolute; left:18px; bottom:14px; z-index:4}
+.maplibregl-ctrl-scale{
+  background:rgba(255,255,255,.92); border:1px solid var(--ink); border-top:none;
+  color:var(--ink); font-size:11px; font-weight:600; padding:2px 6px; border-radius:0 0 6px 6px;
+}
+.maplibregl-ctrl-bottom-right{margin-right:318px}
+.maplibregl-ctrl-attrib{
+  background:rgba(255,255,255,.88)!important; border-radius:8px!important;
+  font-size:11px!important; padding:2px 8px!important;
+}
+#hint{
+  position:absolute; left:50%; bottom:46px; transform:translateX(-50%); z-index:4;
+  background:rgba(31,45,38,.88); color:#fff; font-size:12.5px; font-weight:600;
+  padding:8px 16px; border-radius:999px; pointer-events:none;
+}
+#bmtoggle{
+  position:absolute; left:50%; bottom:96px; transform:translateX(-50%); z-index:4;
+  display:flex; gap:4px; background:rgba(255,255,255,.95); border:1px solid var(--line);
+  padding:4px; border-radius:999px; box-shadow:var(--shadow);
+}
+#bmtoggle .bm{
+  border:none; background:transparent; font:600 12.5px/1 inherit; color:var(--muted);
+  padding:7px 14px; border-radius:999px; cursor:pointer; font-family:inherit;
+}
+#bmtoggle .bm.on{background:var(--accent); color:#fff}
+/* park badge */
+.park-badge{
+  background:#fff; border:1.5px solid #25B37E; color:#1B8F63;
+  font-size:12.5px; font-weight:700; padding:5px 12px; border-radius:999px;
+  white-space:nowrap; box-shadow:0 4px 12px rgba(31,45,38,.22);
+  display:flex; align-items:center; gap:5px; cursor:default;
+}
+.park-badge::before{content:''; width:8px; height:8px; border-radius:50%; background:#25B37E}
+/* popup */
+.maplibregl-popup-content{
+  padding:10px; border-radius:16px; box-shadow:var(--shadow)!important;
+  font-family:inherit; color:var(--ink); width:270px!important;
+}
+.maplibregl-popup-tip{border-top-color:#fff!important}
+.mp .ph{width:100%; height:150px; object-fit:cover; border-radius:10px; display:block; background:#EEE}
+.mp .row{display:flex; align-items:center; justify-content:space-between; margin-top:8px}
+.mp .row b{font-size:14px}
+.mp .row span{font-size:12px; color:var(--muted)}
+.mp .strip{display:flex; gap:4px; margin-top:7px}
+.mp .strip img{width:100%; height:38px; object-fit:cover; border-radius:6px; flex:1; min-width:0}
+.mp .cap{font-size:12.5px; color:#4B5C54; margin-top:7px; line-height:1.5}
+.maplibregl-popup-close-button{
+  font-size:18px; color:var(--muted); right:4px; top:2px; width:24px; height:24px;
+}
+@media (max-width:860px){
+  #panel{width:250px}
+  #hd{width:250px}
+  .maplibregl-ctrl-bottom-right{margin-right:270px}
+}
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<header id="hd">
+  <div class="kicker">2026-09-28 · 周一傍晚</div>
+  <h1>玉皇山公园 · 亲子路线</h1>
+  <div class="sub" id="subline">余姚 · 带娃慢悠悠逛了一圈</div>
+  <div class="chips">
+    <span class="chip hot" id="c-dist">— km</span>
+    <span class="chip leaf" id="c-time">—</span>
+    <span class="chip" id="c-photos">—</span>
+  </div>
+  <div class="note" id="note">路线由带定位的照片按拍摄顺序连线还原，非 GPS 轨迹，仅供纪念回顾。绿色范围为高德官方公园边界。</div>
+</header>
+
+<aside id="panel">
+  <div class="phd"><b>路线时间轴</b><span>点一点，地图上见</span></div>
+  <div id="timeline"></div>
+</aside>
+
+<div id="scale-wrap"></div>
+<div id="hint">点击地图上的数字图钉查看该处照片</div>
+<div id="bmtoggle">
+  <button class="bm on" data-bm="road">矢量地图</button>
+  <button class="bm" data-bm="sat">卫星影像</button>
+</div>
+<pre id="dbg" style="position:absolute;left:0;bottom:0;z-index:99;background:#000;color:#0f0;font-size:11px;max-width:60%;max-height:50%;overflow:auto;white-space:pre-wrap;margin:0;padding:6px;display:none"></pre>
+<script>
+(function(){
+  const d=document.getElementById('dbg'); const log=[];
+  window.__log=m=>{log.push(m); d.textContent=log.join('\n');};
+  window.addEventListener('error',e=>window.__log('ERR '+(e.message||'')+' @'+(e.lineno||'')));
+  window.addEventListener('unhandledrejection',ev=>window.__log('REJ '+(ev.reason&&ev.reason.message||ev.reason)));
+  try{
+    const c=document.createElement('canvas');
+    const gl=c.getContext('webgl2')||c.getContext('webgl');
+    window.__log('webgl='+(gl?'OK':'FAIL'));
+  }catch(e){window.__log('webgl throw '+e.message);}
+  if(location.hash==='#debug') d.style.display='block';
+})();
+</script>
+
+<script src="maplibre-gl.js"></script>
+<script>
+const maplibregl = window.maplibregl;
+
+const DATA = {
+ "date": "2026-09-28",
+ "place": "余姚 · 玉皇山公园",
+ "start": "16:36",
+ "end": "17:12",
+ "photoCount": 30,
+ "stopCount": 14,
+ "distanceM": 2522,
+ "line": [
+  [
+   121.166269,
+   30.046942
+  ],
+  [
+   121.165814,
+   30.04745
+  ],
+  [
+   121.169736,
+   30.045538
+  ],
+  [
+   121.169772,
+   30.047421
+  ],
+  [
+   121.172718,
+   30.044901
+  ],
+  [
+   121.171281,
+   30.046726
+  ],
+  [
+   121.170718,
+   30.047019
+  ],
+  [
+   121.169602,
+   30.048509
+  ],
+  [
+   121.171261,
+   30.048353
+  ],
+  [
+   121.169188,
+   30.048629
+  ],
+  [
+   121.168306,
+   30.049138
+  ],
+  [
+   121.166233,
+   30.050098
+  ],
+  [
+   121.166068,
+   30.048716
+  ],
+  [
+   121.165672,
+   30.048329
+  ]
+ ],
+ "stops": [
+  {
+   "n": 1,
+   "lat": 30.046942,
+   "lon": 121.166269,
+   "photos": [
+    {
+     "t": "16:36:59",
+     "img": "photos/p01.jpg",
+     "file": "MVIMG_20260928_163659.jpg"
+    },
+    {
+     "t": "16:41:08",
+     "img": "photos/p02.jpg",
+     "file": "MVIMG_20260928_164108.jpg"
+    },
+    {
+     "t": "16:41:27",
+     "img": "photos/p03.jpg",
+     "file": "MVIMG_20260928_164127.jpg"
+    },
+    {
+     "t": "16:41:30",
+     "img": "photos/p04.jpg",
+     "file": "MVIMG_20260928_164130.jpg"
+    },
+    {
+     "t": "16:41:31",
+     "img": "photos/p05.jpg",
+     "file": "MVIMG_20260928_164131.jpg"
+    }
+   ]
+  },
+  {
+   "n": 2,
+   "lat": 30.04745,
+   "lon": 121.165814,
+   "photos": [
+    {
+     "t": "16:44:07",
+     "img": "photos/p06.jpg",
+     "file": "MVIMG_20260928_164407.jpg"
+    },
+    {
+     "t": "16:44:13",
+     "img": "photos/p07.jpg",
+     "file": "MVIMG_20260928_164413.jpg"
+    },
+    {
+     "t": "16:44:38",
+     "img": "photos/p08.jpg",
+     "file": "MVIMG_20260928_164438.jpg"
+    },
+    {
+     "t": "16:44:40",
+     "img": "photos/p09.jpg",
+     "file": "MVIMG_20260928_164440.jpg"
+    }
+   ]
+  },
+  {
+   "n": 3,
+   "lat": 30.045538,
+   "lon": 121.169736,
+   "photos": [
+    {
+     "t": "16:44:58",
+     "img": "photos/p10.jpg",
+     "file": "MVIMG_20260928_164458.jpg"
+    }
+   ]
+  },
+  {
+   "n": 4,
+   "lat": 30.047421,
+   "lon": 121.169772,
+   "photos": [
+    {
+     "t": "16:48:38",
+     "img": "photos/p11.jpg",
+     "file": "MVIMG_20260928_164838.jpg"
+    },
+    {
+     "t": "16:48:51",
+     "img": "photos/p12.jpg",
+     "file": "MVIMG_20260928_164851.jpg"
+    }
+   ]
+  },
+  {
+   "n": 5,
+   "lat": 30.044901,
+   "lon": 121.172718,
+   "photos": [
+    {
+     "t": "16:49:37",
+     "img": "photos/p13.jpg",
+     "file": "MVIMG_20260928_164937.jpg"
+    }
+   ]
+  },
+  {
+   "n": 6,
+   "lat": 30.046726,
+   "lon": 121.171281,
+   "photos": [
+    {
+     "t": "16:52:53",
+     "img": "photos/p14.jpg",
+     "file": "MVIMG_20260928_165253.jpg"
+    }
+   ]
+  },
+  {
+   "n": 7,
+   "lat": 30.047019,
+   "lon": 121.170718,
+   "photos": [
+    {
+     "t": "16:52:59",
+     "img": "photos/p15.jpg",
+     "file": "MVIMG_20260928_165259.jpg"
+    }
+   ]
+  },
+  {
+   "n": 8,
+   "lat": 30.048509,
+   "lon": 121.169602,
+   "photos": [
+    {
+     "t": "16:54:17",
+     "img": "photos/p16.jpg",
+     "file": "MVIMG_20260928_165417.jpg"
+    },
+    {
+     "t": "16:54:27",
+     "img": "photos/p17.jpg",
+     "file": "MVIMG_20260928_165427.jpg"
+    }
+   ]
+  },
+  {
+   "n": 9,
+   "lat": 30.048353,
+   "lon": 121.171261,
+   "photos": [
+    {
+     "t": "16:55:16",
+     "img": "photos/p18.jpg",
+     "file": "MVIMG_20260928_165516.jpg"
+    },
+    {
+     "t": "16:55:24",
+     "img": "photos/p19.jpg",
+     "file": "MVIMG_20260928_165524.jpg"
+    },
+    {
+     "t": "16:55:27",
+     "img": "photos/p20.jpg",
+     "file": "MVIMG_20260928_165527.jpg"
+    },
+    {
+     "t": "16:55:34",
+     "img": "photos/p21.jpg",
+     "file": "MVIMG_20260928_165534.jpg"
+    },
+    {
+     "t": "16:55:36",
+     "img": "photos/p22.jpg",
+     "file": "MVIMG_20260928_165536.jpg"
+    }
+   ]
+  },
+  {
+   "n": 10,
+   "lat": 30.048629,
+   "lon": 121.169188,
+   "photos": [
+    {
+     "t": "16:57:40",
+     "img": "photos/p23.jpg",
+     "file": "MVIMG_20260928_165740.jpg"
+    }
+   ]
+  },
+  {
+   "n": 11,
+   "lat": 30.049138,
+   "lon": 121.168306,
+   "photos": [
+    {
+     "t": "17:00:12",
+     "img": "photos/p24.jpg",
+     "file": "MVIMG_20260928_170011.jpg"
+    },
+    {
+     "t": "17:00:26",
+     "img": "photos/p25.jpg",
+     "file": "MVIMG_20260928_170026.jpg"
+    }
+   ]
+  },
+  {
+   "n": 12,
+   "lat": 30.050098,
+   "lon": 121.166233,
+   "photos": [
+    {
+     "t": "17:05:59",
+     "img": "photos/p26.jpg",
+     "file": "MVIMG_20260928_170559.jpg"
+    }
+   ]
+  },
+  {
+   "n": 13,
+   "lat": 30.048716,
+   "lon": 121.166068,
+   "photos": [
+    {
+     "t": "17:08:54",
+     "img": "photos/p27.jpg",
+     "file": "MVIMG_20260928_170854.jpg"
+    },
+    {
+     "t": "17:09:00",
+     "img": "photos/p28.jpg",
+     "file": "MVIMG_20260928_170900.jpg"
+    }
+   ]
+  },
+  {
+   "n": 14,
+   "lat": 30.048329,
+   "lon": 121.165672,
+   "photos": [
+    {
+     "t": "17:12:45",
+     "img": "photos/p29.jpg",
+     "file": "MVIMG_20260928_171245.jpg"
+    },
+    {
+     "t": "17:12:59",
+     "img": "photos/p30.jpg",
+     "file": "MVIMG_20260928_171259.jpg"
+    }
+   ]
+  }
+ ]
+};
+const VARIANT = 'scenery';               /* 'all' | 'scenery' */
+const COORD_MODE = 'raw';         /* 'raw' | 'conv' (wgs2gcj) */
+const PCLASS = {
+ "photos/p01.jpg": "scenery",
+ "photos/p02.jpg": "scenery",
+ "photos/p03.jpg": "people",
+ "photos/p04.jpg": "people",
+ "photos/p05.jpg": "people",
+ "photos/p06.jpg": "scenery",
+ "photos/p07.jpg": "scenery",
+ "photos/p08.jpg": "people",
+ "photos/p09.jpg": "people",
+ "photos/p10.jpg": "scenery",
+ "photos/p11.jpg": "scenery",
+ "photos/p12.jpg": "scenery",
+ "photos/p13.jpg": "scenery",
+ "photos/p14.jpg": "scenery",
+ "photos/p15.jpg": "people",
+ "photos/p16.jpg": "scenery",
+ "photos/p17.jpg": "people",
+ "photos/p18.jpg": "people",
+ "photos/p19.jpg": "people",
+ "photos/p20.jpg": "people",
+ "photos/p21.jpg": "people",
+ "photos/p22.jpg": "people",
+ "photos/p23.jpg": "scenery",
+ "photos/p24.jpg": "people",
+ "photos/p25.jpg": "people",
+ "photos/p26.jpg": "scenery",
+ "photos/p27.jpg": "scenery",
+ "photos/p28.jpg": "scenery",
+ "photos/p29.jpg": "scenery",
+ "photos/p30.jpg": "scenery"
+};              /* {img: 'people'|'scenery'|'unclear'} */
+
+function wgs2gcj(lat, lon) {
+  const a = 6378245.0, ee = 0.00669342162296594323;
+  function tl(x, y) {
+    let r = -100 + 2*x + 3*y + .2*y*y + .1*x*y + .2*Math.sqrt(Math.abs(x));
+    r += (20*Math.sin(6*x*Math.PI) + 20*Math.sin(2*x*Math.PI)) * 2/3;
+    r += (20*Math.sin(y*Math.PI) + 40*Math.sin(y/3*Math.PI)) * 2/3;
+    r += (160*Math.sin(y/12*Math.PI) + 320*Math.sin(y*Math.PI/30)) * 2/3;
+    return r;
+  }
+  function tr(x, y) {
+    let r = 300 + x + 2*y + .1*x*x + .1*x*y + .1*Math.sqrt(Math.abs(x));
+    r += (20*Math.sin(6*x*Math.PI) + 20*Math.sin(2*x*Math.PI)) * 2/3;
+    r += (20*Math.sin(x*Math.PI) + 40*Math.sin(x/3*Math.PI)) * 2/3;
+    r += (150*Math.sin(x/12*Math.PI) + 300*Math.sin(x/30*Math.PI)) * 2/3;
+    return r;
+  }
+  const dLat = tl(lon - 105, lat - 35), dLon = tr(lon - 105, lat - 35);
+  const rad = lat / 180 * Math.PI;
+  let m = Math.sin(rad); m = 1 - ee * m * m; const sm = Math.sqrt(m);
+  const la = (dLat * 180) / ((a * (1 - ee)) / (m * sm) * Math.PI);
+  const lo = (dLon * 180) / (a / sm * Math.cos(rad) * Math.PI);
+  return [lat + la, lon + lo];
+}
+function gcj2wgs(lat, lon) {
+  let a = lat, b = lon;
+  for (let i = 0; i < 3; i++) {
+    const g = wgs2gcj(a, b);
+    a -= g[0] - lat; b -= g[1] - lon;
+  }
+  return [a, b];
+}
+
+/* coordinate fix before any use of lat/lon (only when displaying on GCJ bases) */
+if (COORD_MODE === 'conv') {
+  DATA.stops.forEach(s => { const g = wgs2gcj(s.lat, s.lon); s.lat = g[0]; s.lon = g[1]; });
+}
+
+/* ---- park AOI (amap official, stored GCJ) & GPS-drift snap ---- */
+const PARK_AOI_GCJ = [[121.169783, 30.047647], [121.170138, 30.046137], [121.170337, 30.045272], [121.170433, 30.044842], [121.170753, 30.043381], [121.170765, 30.043338], [121.170791, 30.0433], [121.170826, 30.043273], [121.170872, 30.043253], [121.170924, 30.043249], [121.17099, 30.043249], [121.171178, 30.043249], [121.17129, 30.043249], [121.171403, 30.043238], [121.171533, 30.04321], [121.171658, 30.043174], [121.171862, 30.043092], [121.172122, 30.042978], [121.172493, 30.042801], [121.172614, 30.043188], [121.172497, 30.043215], [121.172488, 30.04334], [121.172534, 30.043336], [121.172598, 30.043336], [121.172668, 30.043343], [121.172725, 30.043359], [121.17279, 30.043393], [121.172839, 30.043431], [121.172885, 30.043479], [121.172925, 30.043546], [121.172947, 30.043604], [121.172951, 30.04366], [121.172947, 30.043715], [121.172929, 30.04378], [121.172877, 30.043857], [121.17301, 30.043901], [121.173024, 30.043891], [121.173046, 30.043877], [121.173074, 30.043868], [121.173104, 30.043866], [121.173137, 30.043869], [121.173158, 30.043878], [121.173173, 30.043891], [121.173183, 30.043908], [121.173191, 30.043935], [121.173191, 30.043958], [121.173187, 30.043979], [121.173393, 30.044317], [121.173623, 30.044765], [121.173864, 30.04516], [121.174084, 30.045502], [121.174365, 30.045908], [121.174504, 30.046188], [121.174516, 30.04623], [121.174517, 30.046264], [121.174514, 30.046295], [121.174498, 30.046325], [121.174479, 30.046346], [121.174437, 30.046375], [121.17401, 30.046549], [121.173952, 30.046634], [121.173918, 30.046673], [121.173863, 30.046708], [121.173766, 30.046754], [121.173649, 30.046797], [121.173551, 30.046817], [121.17303, 30.046925], [121.172905, 30.04693], [121.172741, 30.046917], [121.172315, 30.046868], [121.172282, 30.046874], [121.172246, 30.046888], [121.172229, 30.046907], [121.172207, 30.046924], [121.172174, 30.04694], [121.172157, 30.046941], [121.172156, 30.046986], [121.172193, 30.046993], [121.172216, 30.047006], [121.17224, 30.047024], [121.17226, 30.047042], [121.172279, 30.047051], [121.172299, 30.047057], [121.17233, 30.047063], [121.172451, 30.047085], [121.172486, 30.047096], [121.172524, 30.047114], [121.172557, 30.047141], [121.172581, 30.04717], [121.172593, 30.047199], [121.172602, 30.047229], [121.172602, 30.047264], [121.172596, 30.047307], [121.172585, 30.047338], [121.172569, 30.047368], [121.172553, 30.047389], [121.172523, 30.047415], [121.172342, 30.047525], [121.172011, 30.047551], [121.171578, 30.047575], [121.171228, 30.047573], [121.170848, 30.047606], [121.170428, 30.047671], [121.169988, 30.047758], [121.169935, 30.047763], [121.169897, 30.047763], [121.169862, 30.04776], [121.169836, 30.04775], [121.16981, 30.047734], [121.169791, 30.047707], [121.169782, 30.047683], [121.169783, 30.047647]];
+/* convert AOI ring into the display coordinate space */
+const PARK_AOI = (function () {
+  if (COORD_MODE === 'raw') return PARK_AOI_GCJ.map(p => { const g = gcj2wgs(p[1], p[0]); return [g[1], g[0]]; });
+  return PARK_AOI_GCJ;
+})();
+const EDGE_TOL_M = 35;   /* within this of boundary: gate/road fringe, keep as-is */
+
+function inRing(lon, lat, ring) {
+  let c = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const xi = ring[i][0], yi = ring[i][1], xj = ring[j][0], yj = ring[j][1];
+    if (((yi > lat) !== (yj > lat)) &&
+        (lon < (xj - xi) * (lat - yi) / (yj - yi + 1e-15) + xi)) c = !c;
+  }
+  return c;
+}
+function mPerLon(lat){ return 111320 * Math.cos(lat * Math.PI / 180); }
+function mPerLat(){ return 111320; }
+function nearestOnRing(lon, lat, ring) {
+  let best = null;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const x1 = ring[j][0], y1 = ring[j][1], x2 = ring[i][0], y2 = ring[i][1];
+    const kx = mPerLon(lat), ky = mPerLat();
+    const ax = x1 * kx, ay = y1 * ky, bx = x2 * kx, by = y2 * ky;
+    const px = lon * kx, py = lat * ky;
+    const dx = bx - ax, dy = by - ay;
+    const len2 = dx * dx + dy * dy || 1;
+    let t = ((px - ax) * dx + (py - ay) * dy) / len2;
+    t = Math.max(0, Math.min(1, t));
+    const cx = ax + t * dx, cy = ay + t * dy;
+    const d = Math.hypot(px - cx, py - cy);
+    if (!best || d < best.d) best = { d: d, lon: cx / kx, lat: cy / ky };
+  }
+  return best;
+}
+function snapStop(s) {
+  if (inRing(s.lon, s.lat, PARK_AOI)) return false;
+  const near = nearestOnRing(s.lon, s.lat, PARK_AOI);
+  if (near.d <= EDGE_TOL_M) return false;             /* on gate road / fringe: keep */
+  /* move to boundary then step inside toward centroid */
+  let lon = near.lon, lat = near.lat;
+  let cx = 0, cy = 0;
+  PARK_AOI.forEach(p => { cx += p[0]; cy += p[1]; });
+  cx /= PARK_AOI.length; cy /= PARK_AOI.length;
+  const vlon = cx - lon, vlat = cy - lat;
+  const n = Math.hypot(vlon * mPerLon(lat), vlat * mPerLat()) || 1;
+  const stepM = 8;
+  lon += vlon / n * stepM / mPerLon(lat);
+  lat += vlat / n * stepM / mPerLat();
+  s.lat = lat; s.lon = lon;
+  s.snapped = true;
+  return true;
+}
+DATA.stops.forEach(snapStop);
+DATA.line = DATA.stops.map(s => [s.lon, s.lat]);
+
+/* filter photos & drop empty stops for scenery edition */
+if (VARIANT === 'scenery') {
+  DATA.stops = DATA.stops
+    .map(s => ({...s, photos: s.photos.filter(p => (PCLASS[p.img] || 'people') === 'scenery' || (PCLASS[p.img] || 'people') === 'unclear')}))
+    .filter(s => s.photos.length > 0);
+  DATA.stops.forEach((s,i)=>{ s.n = i+1; });
+  DATA.line = DATA.stops.map(s => [s.lon, s.lat]);
+}
+/* recompute stats from (possibly filtered) data */
+const havm = (a,b)=>{
+  const R=6371000, r=Math.PI/180;
+  const dLat=(b[1]-a[1])*r, dLon=(b[0]-a[0])*r;
+  const h=Math.sin(dLat/2)**2+Math.cos(a[1]*r)*Math.cos(b[1]*r)*Math.sin(dLon/2)**2;
+  return 2*R*Math.asin(Math.sqrt(h));
+};
+DATA.photoCount = DATA.stops.reduce((n,s)=>n+s.photos.length,0);
+DATA.stopCount = DATA.stops.length;
+DATA.distanceM = Math.round(DATA.line.reduce((n,c,i)=>i? n+havm(DATA.line[i-1],c):n,0));
+DATA.start = DATA.stops[0].photos[0].t.slice(0,5);
+DATA.end = DATA.stops[DATA.stops.length-1].photos.slice(-1)[0].t.slice(0,5);
+
+/* ---------- ui refs ---------- */
+const $ = s => document.querySelector(s);
+const tl = $('#timeline');
+
+$('#c-dist').textContent = (DATA.distanceM/1000).toFixed(1) + ' km';
+$('#c-time').textContent = DATA.start + ' – ' + DATA.end;
+$('#c-photos').textContent = DATA.photoCount + ' 张 · ' + DATA.stopCount + ' 站';
+if (VARIANT === 'scenery') {
+  document.querySelector('#hd h1').textContent = '玉皇山公园 · 纯风景版';
+  document.title = '玉皇山公园 · 纯风景版路线图';
+} else {
+  document.querySelector('#hd h1').textContent = '玉皇山公园 · 有人有风景版';
+  document.title = '玉皇山公园 · 有人有风景版路线图';
+}
+const snappedStops = DATA.stops.filter(s => s.snapped);
+if (snappedStops.length) {
+  document.getElementById('note').textContent =
+    '路线由带定位的照片按拍摄顺序连线还原，非 GPS 轨迹。' +
+    '树下 GPS 漂移的 ' + snappedStops.map(s => s.n).join('、') +
+    ' 号站已按高德官方公园边界内收修正；绿色范围与修正均基于高德官方数据。';
+}
+
+const mins = (() => {
+  const [h1,m1] = DATA.start.split(':').map(Number);
+  const [h2,m2] = DATA.end.split(':').map(Number);
+  return (h2*60+m2)-(h1*60+m1);
+})();
+$('#subline').textContent = `余姚 · ${mins} 分钟，走了 ${(DATA.distanceM/1000).toFixed(1)} 公里`;
+
+/* ---------- timeline cards ---------- */
+const cards = DATA.stops.map((s,i)=>{
+  const el = document.createElement('div');
+  el.className = 'card' + (i===0?' s1':'') + (i===DATA.stops.length-1?' sN':'');
+  const first = s.photos[0];
+  const t0 = s.photos[0].t.slice(0,5), t1 = s.photos[s.photos.length-1].t.slice(0,5);
+  el.innerHTML = `
+    <div class="num">${s.n}</div>
+    <img class="thumb" src="${first.img}" alt="" loading="lazy">
+    <div class="meta">
+      <div class="t"><span class="tm">${t0}${t1!==t0?'–'+t1:''}</span>
+        ${i===0?'<em>起点</em>':''}${i===DATA.stops.length-1?'<em>终点</em>':''}
+        ${s.photos.length>1?`<em>${s.photos.length} 张</em>`:''}</div>
+      <div class="cap"></div>
+    </div>`;
+  el.addEventListener('click',()=>select(i,{fly:true}));
+  tl.appendChild(el);
+  return el;
+});
+
+/* ---------- map ---------- */
+let readyDone=false;
+function markReady(){ if(readyDone)return; readyDone=true; document.body.classList.add('ready'); }
+setTimeout(markReady,3500);
+
+const TDT_TK = 'b88bfb160c81dab8d9d20aaa74846360';
+function tdtUrl(layer) {
+  return [0,1,2,3].map(i =>
+    `https://t${i}.tianditu.gov.cn/${layer}_w/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0` +
+    `&LAYER=${layer==='vec'?'vec':layer==='img'?'img':'cva'}&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles` +
+    `&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&tk=${TDT_TK}`);
+}
+const map = new maplibregl.Map({
+  container:'map',
+  style:{
+    version:8,
+    glyphs:'https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf',
+    sources:{
+      vec:{type:'raster',tileSize:256,maxzoom:18,tiles:tdtUrl('vec')},
+      img:{type:'raster',tileSize:256,maxzoom:18,tiles:tdtUrl('img')},
+      cva:{type:'raster',tileSize:256,maxzoom:18,tiles:tdtUrl('cva')}
+    },
+    layers:[
+      {id:'bg',type:'background',paint:{'background-color':'#F4F1E8'}},
+      {id:'vec',type:'raster',source:'vec'},
+      {id:'img',type:'raster',source:'img',layout:{'visibility':'none'}},
+      {id:'cva',type:'raster',source:'cva',paint:{'raster-opacity':.95}}
+    ]
+  },
+  center:[121.167,30.048], zoom:14.2, pitch:42, bearing:-12,
+  attributionControl:false,
+  maxPitch:60
+});
+map.addControl(new maplibregl.AttributionControl({compact:true,
+  customAttribution:'© 天地图 · 公园边界:高德'}));
+window.__log&&window.__log('map constructed');
+map.on('load',()=>{ addRoute(); addMarkers(); fitAll(); bindBasemapToggle(); markReady(); window.__log&&window.__log('map load ok'); });
+function bindBasemapToggle(){
+  document.querySelectorAll('#bmtoggle .bm').forEach(b=>{
+    b.addEventListener('click',()=>{
+      document.querySelectorAll('#bmtoggle .bm').forEach(x=>x.classList.remove('on'));
+      b.classList.add('on');
+      const sat = b.dataset.bm==='sat';
+      try{
+        map.setLayoutProperty('vec','visibility', sat?'none':'visible');
+        map.setLayoutProperty('img','visibility', sat?'visible':'none');
+      }catch(e){}
+    });
+  });
+}
+map.on('error',e=>{ window.__log&&window.__log('MAPERR '+(e.error&&e.error.message||JSON.stringify(e).slice(0,200))); markReady(); });
+
+map.addControl(new maplibregl.ScaleControl({maxWidth:110,unit:'metric'}),'bottom-left');
+map.addControl(new maplibregl.NavigationControl({showCompass:false}),'bottom-left');
+
+/* route glow + casing + main + park AOI */
+function addRoute(){
+  const aoi = {type:'Feature',properties:{},geometry:{type:'Polygon',coordinates:[PARK_AOI]}};
+  map.addSource('parkaoi',{type:'geojson',data:aoi});
+  map.addLayer({id:'parkaoi-fill',type:'fill',source:'parkaoi',
+    paint:{'fill-color':'#5CBD6E','fill-opacity':.30}}, 'cva');
+  map.addLayer({id:'parkaoi-line',type:'line',source:'parkaoi',
+    layout:{'line-join':'round'},
+    paint:{'line-color':'#1F8F4F','line-width':2.2,'line-opacity':.95}}, 'cva');
+  const geo = {type:'Feature',properties:{},geometry:{type:'LineString',coordinates:DATA.line}};
+  map.addSource('route',{type:'geojson',data:geo});
+  map.addLayer({id:'route-glow',type:'line',source:'route',
+    paint:{'line-color':'#FF7A45','line-width':14,'line-opacity':.22,'line-blur':6}});
+  map.addLayer({id:'route-case',type:'line',source:'route',
+    layout:{'line-cap':'round','line-join':'round'},
+    paint:{'line-color':'#FFFFFF','line-width':7,'line-opacity':.95}});
+  map.addLayer({id:'route-main',type:'line',source:'route',
+    layout:{'line-cap':'round','line-join':'round'},
+    paint:{'line-color':'#FF6B35','line-width':4.2}});
+  /* direction arrows midway */
+  map.addLayer({id:'route-arrow',type:'symbol',source:'route',
+    layout:{
+      'symbol-placement':'line','text-field':'▶','text-size':13,
+      'text-rotation-alignment':'map','text-pitch-alignment':'viewport',
+      'text-font':['Noto Sans Regular']
+    },
+    paint:{'text-color':'#FFFFFF','text-halo-color':'#FF7A45','text-halo-width':1.4}});
+}
+
+/* html markers — pinned EXACTLY at coordinates (no visual nudging) */
+const markers = [];
+let parkEl = null;
+function addMarkers(){
+  DATA.stops.forEach((s,i)=>{
+    const el = document.createElement('div');
+    el.className = 'pin' + (i===0?' s1':'') + (i===DATA.stops.length-1?' sN':'');
+    el.textContent = s.n;
+    if(i===0){ const t=document.createElement('span'); t.className='ptag g'; t.textContent='起点'; el.appendChild(t); }
+    if(i===DATA.stops.length-1){ const t=document.createElement('span'); t.className='ptag'; t.textContent='终点'; el.appendChild(t); }
+    el.addEventListener('click',(ev)=>{ ev.stopPropagation(); select(i,{fly:false}); });
+    const m = new maplibregl.Marker({element:el,anchor:'center'})
+      .setLngLat([s.lon,s.lat]).addTo(map);
+    markers.push({el,m});
+  });
+  parkEl = document.createElement('div');
+  parkEl.className = 'park-badge';
+  parkEl.textContent = '玉皇山公园';
+  let blon = 121.167995, blat = 30.047907;
+  if (COORD_MODE === 'conv') { const g = wgs2gcj(blat, blon); blat = g[0]; blon = g[1]; }
+  new maplibregl.Marker({element:parkEl,anchor:'center'}).setLngLat([blon,blat]).addTo(map);
+}
+
+const popup = new maplibregl.Popup({maxWidth:'290px',offset:26,closeButton:true});
+function openPopup(i){
+  const s = DATA.stops[i];
+  const first = s.photos[0];
+  const t0 = first.t.slice(0,5), t1 = s.photos[s.photos.length-1].t.slice(0,5);
+  const strip = s.photos.length>1
+    ? `<div class="strip">${s.photos.slice(0,4).map(p=>`<img src="${p.img}" loading="lazy">`).join('')}</div>` : '';
+  popup.setLngLat([s.lon,s.lat]).setHTML(`
+    <div class="mp">
+      <img class="ph" src="${first.img}" alt="">
+      <div class="row"><b>第 ${s.n} 站</b><span>${t0}${t1!==t0?' – '+t1:''}</span></div>
+      ${strip}
+      <div class="cap" data-cap="${s.n}"></div>
+    </div>`).addTo(map);
+}
+
+let current = -1;
+function select(i,{fly=false}={}){
+  current = i;
+  markers.forEach((o,j)=>o.el.classList.toggle('on',j===i));
+  cards.forEach((c,j)=>c.classList.toggle('on',j===i));
+  cards[i].scrollIntoView({block:'nearest',behavior:'smooth'});
+  if(fly){
+    map.flyTo({center:[DATA.stops[i].lon,DATA.stops[i].lat],zoom:15.6,duration:1100,essential:true});
+  }
+  setTimeout(()=>openPopup(i), fly?650:0);
+}
+map.on('click',()=>{ popup.remove(); current=-1;
+  markers.forEach(o=>o.el.classList.remove('on'));
+  cards.forEach(c=>c.classList.remove('on')); });
+
+function fitAll(){
+  const b = new maplibregl.LngLatBounds();
+  DATA.line.forEach(c=>b.extend(c));
+  map.fitBounds(b,{padding:{top:110,right:340,bottom:150,left:60},duration:0,maxZoom:15.2});
+}
+</script>
+</body>
+</html>
