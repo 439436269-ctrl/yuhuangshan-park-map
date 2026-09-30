@@ -136,6 +136,24 @@ body.ready>*:not(#map){opacity:1}
   padding:7px 14px; border-radius:999px; cursor:pointer; font-family:inherit;
 }
 #bmtoggle .bm.on{background:var(--accent); color:#fff}
+/* story video modal */
+#vmodal{position:fixed; inset:0; z-index:40; background:rgba(15,22,18,.88);
+  display:flex; align-items:center; justify-content:center;}
+#vmodal.hidden{display:none}
+.vbox{position:relative; text-align:center}
+#vclose{position:absolute; top:-44px; right:-6px; width:36px; height:36px; border-radius:50%;
+  border:none; background:#fff; color:var(--ink); font-size:18px; cursor:pointer; box-shadow:var(--shadow)}
+#vplayer{max-height:80vh; max-width:92vw; height:80vh; background:#000; border-radius:14px;
+  box-shadow:0 18px 60px rgba(0,0,0,.5)}
+#vlabel{color:#fff; font-size:14px; margin-top:12px; opacity:.9}
+.vbtn{display:inline-block; margin-top:9px; border:none; cursor:pointer;
+  background:var(--accent); color:#fff; font-weight:700; font-size:13.5px;
+  padding:9px 16px; border-radius:999px; box-shadow:0 4px 14px rgba(255,107,53,.4);
+  font-family:inherit}
+.vbtn:hover{background:var(--accent-deep)}
+.card .vs{font-style:normal; font-size:11px; color:#fff; background:var(--accent);
+  padding:1px 7px; border-radius:999px; font-weight:700; cursor:pointer}
+.card .vs:hover{background:var(--accent-deep)}
 /* park badge */
 .park-badge{
   background:#fff; border:1.5px solid #25B37E; color:#1B8F63;
@@ -192,6 +210,13 @@ body.ready>*:not(#map){opacity:1}
 <div id="bmtoggle">
   <button class="bm on" data-bm="road">矢量地图</button>
   <button class="bm" data-bm="sat">卫星影像</button>
+</div>
+<div id="vmodal" class="hidden">
+  <div class="vbox">
+    <button id="vclose" aria-label="关闭">✕</button>
+    <video id="vplayer" controls playsinline preload="metadata"></video>
+    <div id="vlabel"></div>
+  </div>
 </div>
 <pre id="dbg" style="position:absolute;left:0;bottom:0;z-index:99;background:#000;color:#0f0;font-size:11px;max-width:60%;max-height:50%;overflow:auto;white-space:pre-wrap;margin:0;padding:6px;display:none"></pre>
 <script>
@@ -564,6 +589,7 @@ const PCLASS = {
  "photos/p29.jpg": "scenery",
  "photos/p30.jpg": "scenery"
 };              /* {img: 'people'|'scenery'|'unclear'} */
+const STORY = {"src": "story.mp4", "win": [[0.0, 13.28], [13.28, 24.64], [24.64, 38.72], [38.72, 50.24], [50.24, 59.68], [59.68, 72.8]], "stop2chap": {"1": 0, "2": 1, "3": 1, "4": 2, "5": 2, "6": 3, "7": 3, "8": 3, "9": 3, "10": 3, "11": 4, "12": 4, "13": 4, "14": 5}};                     /* {src, win:[[s,e]..], stop2chap:{n:idx}} or {} */
 
 function wgs2gcj(lat, lon) {
   const a = 6378245.0, ee = 0.00669342162296594323;
@@ -722,10 +748,13 @@ const cards = DATA.stops.map((s,i)=>{
     <div class="meta">
       <div class="t"><span class="tm">${t0}${t1!==t0?'–'+t1:''}</span>
         ${i===0?'<em>起点</em>':''}${i===DATA.stops.length-1?'<em>终点</em>':''}
-        ${s.photos.length>1?`<em>${s.photos.length} 张</em>`:''}</div>
+        ${s.photos.length>1?`<em>${s.photos.length} 张</em>`:''}
+        ${(STORY && STORY.src)?'<em class="vs" title="播放这一站的故事">▶</em>':''}</div>
       <div class="cap"></div>
     </div>`;
   el.addEventListener('click',()=>select(i,{fly:true}));
+  const vs = el.querySelector('.vs');
+  if (vs) vs.addEventListener('click',(ev)=>{ ev.stopPropagation(); openStory(s.n); });
   tl.appendChild(el);
   return el;
 });
@@ -838,6 +867,40 @@ function addMarkers(){
 }
 
 const popup = new maplibregl.Popup({maxWidth:'290px',offset:26,closeButton:true});
+function fmtT(x){ const m = Math.floor(x/60), s = x % 60; return m + ':' + (s < 10 ? '0' : '') + s.toFixed(1); }
+function openStory(n){
+  if (!STORY || !STORY.src) return;
+  const idx = (STORY.stop2chap[String(n)] != null) ? STORY.stop2chap[String(n)] : 0;
+  const span = STORY.win[idx] || [0, 8];
+  const v = document.getElementById('vplayer');
+  const lbl = document.getElementById('vlabel');
+  lbl.textContent = '第 ' + n + ' 站 · 故事第 ' + (idx + 1) + ' 段（' + fmtT(span[0]) + ' – ' + fmtT(span[1]) + '）';
+  const seek = () => {
+    const doSeek = () => { try { v.currentTime = span[0] + 0.02; return true; } catch (e) { return false; } };
+    doSeek();
+    /* local static servers may lack Range support; retry once buffer catches up */
+    [700, 2000, 4500].forEach(ms => setTimeout(() => {
+      if (document.getElementById('vmodal').classList.contains('hidden')) return;
+      if (Math.abs(v.currentTime - span[0]) > 1.5) doSeek();
+    }, ms));
+  };
+  if (!v.dataset.loaded) {
+    v.src = STORY.src;
+    v.dataset.loaded = '1';
+    v.addEventListener('loadedmetadata', seek, { once: true });
+  } else { seek(); }
+  document.getElementById('vmodal').classList.remove('hidden');
+  const p = v.play(); if (p && p.catch) p.catch(() => {});
+}
+function closeStory(){
+  const v = document.getElementById('vplayer');
+  try { v.pause(); } catch (e) {}
+  document.getElementById('vmodal').classList.add('hidden');
+}
+document.getElementById('vclose').addEventListener('click', closeStory);
+document.getElementById('vmodal').addEventListener('click', (e)=>{ if (e.target.id === 'vmodal') closeStory(); });
+document.addEventListener('keydown', (e)=>{ if (e.key === 'Escape') closeStory(); });
+
 function openPopup(i){
   const s = DATA.stops[i];
   const first = s.photos[0];
@@ -850,6 +913,7 @@ function openPopup(i){
       <div class="row"><b>第 ${s.n} 站</b><span>${t0}${t1!==t0?' – '+t1:''}</span></div>
       ${strip}
       <div class="cap" data-cap="${s.n}"></div>
+      ${(STORY && STORY.src) ? `<button class="vbtn" onclick="openStory(${s.n})">▶ 播放这一站的故事</button>` : ''}
     </div>`).addTo(map);
 }
 
